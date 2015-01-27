@@ -2,13 +2,17 @@ import sqlite3
 from flask import Flask, g, request, send_file, abort
 from werkzeug import secure_filename
 from uuid import uuid4
-from datetime import datetime
+import datetime
 from os import remove
 from os.path import isfile
 from contextlib import closing
 
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
+
+
+def get_now():
+    return int(datetime.datetime.now().timestamp())
 
 # Request helpers
 # Connect to DB
@@ -36,8 +40,8 @@ def upload(userfile):
 		return "Filesize exceeds " + str(app.config['MAXSIZE']) + " bytes."
 
 	file_id = str(uuid4())[:8]
-	g.db.execute('INSERT INTO files (file_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?)', 
-		[file_id, str(int(datetime.now().timestamp())), request.remote_addr, secure_filename(userfile)])
+	g.db.execute('INSERT INTO files (file_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?)',
+		[file_id, str(get_now()), request.remote_addr, secure_filename(userfile)])
 	g.db.commit()
 	fo = open(app.config['UPLOADDIR'] + file_id, "wb")
 	fo.write(request.data)
@@ -69,7 +73,7 @@ def connect_db():
 # Helpers
 # Remove expired files from the upload directory
 def remove_expired():
-	now = int(datetime.now().timestamp())
+	now = get_now()
 	cur = g.db.execute('SELECT file_id, timestamp FROM files')
 	for row in cur.fetchall():
 		if (now - row[1]) > app.config['EXPIRES']:
@@ -79,7 +83,7 @@ def remove_expired():
 
 # Check if file exists and returns original upload name
 def checkfile(file_id):
-	cur = g.db.execute('SELECT originalname FROM files WHERE file_id = ?', 
+	cur = g.db.execute('SELECT originalname FROM files WHERE file_id = ?',
 		[file_id])
 	for row in cur.fetchall():
 		return row[0]
