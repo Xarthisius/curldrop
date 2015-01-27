@@ -12,7 +12,9 @@ app.config.from_pyfile('config.py')
 
 
 def get_now():
-    return int(datetime.datetime.now().timestamp())
+    #return int(datetime.datetime.now().timestamp())
+    dt = datetime.datetime.now()
+    return (dt - datetime.datetime(1970, 1, 1)).total_seconds()
 
 # Request helpers
 # Connect to DB
