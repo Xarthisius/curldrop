@@ -1,97 +1,109 @@
-import sqlite3
-from flask import Flask, g, request, send_file, abort
+import logging
+import datetime
+import os
 from werkzeug import secure_filename
 from uuid import uuid4
-import datetime
-from os import remove
-from os.path import isfile
-from contextlib import closing
+import sqlite3
+import tornado.ioloop
+import tornado.web
+from tornado.httpserver import HTTPServer
 
-app = Flask(__name__)
-app.config.from_pyfile('config.py')
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)-6s: %(levelname)s - %(message)s')
+
+
+config = {
+    'DATABASE': os.environ.get("DATABASE", 'files.db'),
+    'UPLOADDIR': os.environ.get("UPLOADDIR", 'uploads/'),
+    'BASEURL': os.environ.get("BASEURL", 'http://example.com/'),
+    'BUFFSIZE': os.environ.get("BUFFSIZE", 50 * 1024 ** 2),
+    'EXPIRES': os.environ.get("EXPIRES", 3600 * 24),
+}
 
 
 def get_now():
-    #return int(datetime.datetime.now().timestamp())
+    # return int(datetime.datetime.now().timestamp())
     dt = datetime.datetime.now()
     return (dt - datetime.datetime(1970, 1, 1)).total_seconds()
 
-# Request helpers
-# Connect to DB
-@app.before_request
-def before_request():
-	g.db = connect_db()
 
-# Close DB connection after request
-@app.teardown_request
-def teardown_request(exception):
-	db = getattr(g, 'db', None)
-	if db is not None:
-		db.close()
+@tornado.web.stream_body
+class StreamHandler(tornado.web.RequestHandler):
 
-# Routes
-# Index
-@app.route('/', methods=['GET'])
-def index():
-	return '<a href="https://www.github.com/kevvvvv/curldrop">curldrop</a> is up and running!'
+    def get(self, file_id):
+        db = sqlite3.connect(config['DATABASE'])
+        cur = db.execute(
+            'SELECT originalname FROM files WHERE file_id = ?', [file_id])
+        try:
+            filename = [row for row in cur.fetchall()][0][0]
+        except IndexError:
+            filename = False
+        if filename:
+            self.set_header('Content-Type', 'application/octet-stream')
+            self.set_header(
+                'Content-Disposition', 'attachment; filename=' + filename)
+            with open(config['UPLOADDIR'] + file_id, 'r') as f:
+                while True:
+                    data = f.read(config["BUFFSIZE"])
+                    if not data:
+                        break
+                    self.write(data)
+            self.finish()
+        else:
+            raise tornado.web.HTTPError(404, 'Invalid archive')
 
-# Catch a incoming PUT request
-@app.route('/<userfile>', methods=['PUT'])
-def upload(userfile):
-	if len(request.data) > app.config['MAXSIZE']:
-		return "Filesize exceeds " + str(app.config['MAXSIZE']) + " bytes."
+    def put(self, userfile):
+        self.read_bytes = 0
+        self.file_id = str(uuid4())[:8]
+        self.tempfile = open(config['UPLOADDIR'] + self.file_id, "wb")
+        self.request.request_continue()
+        self.read_chunks()
+        self.uf = userfile
 
-	file_id = str(uuid4())[:8]
-	g.db.execute('INSERT INTO files (file_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?)',
-		[file_id, str(get_now()), request.remote_addr, secure_filename(userfile)])
-	g.db.commit()
-	fo = open(app.config['UPLOADDIR'] + file_id, "wb")
-	fo.write(request.data)
-	fo.close()
-	return app.config['BASEURL'] + file_id + '\n'
+    def read_chunks(self, chunk=''):
+        self.read_bytes += len(chunk)
+        if chunk:
+            logging.info('Received {} bytes'.format(len(chunk)))
+            self.tempfile.write(chunk)
+            # self.md5.update(chunk)
+        chunk_length = min(1024 * 1024 * 50,
+                           self.request.content_length - self.read_bytes)
+        if chunk_length > 0:
+            self.request.connection.stream.read_bytes(
+                chunk_length, self.read_chunks)
+        else:
+            self.uploaded()
 
-# Serve download
-@app.route('/<file_id>', methods=['GET'])
-def download(file_id):
-	remove_expired()
-	if checkfile(file_id):
-		return send_file(app.config['UPLOADDIR'] + file_id, as_attachment=True, attachment_filename=checkfile(file_id))
-	else:
-		abort(404, "The requested file was not found or is expired.")
+    def uploaded(self):
+        db = sqlite3.connect(config['DATABASE'])
+        db.execute('INSERT INTO files (file_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?)',
+                   [self.file_id, str(get_now()), self.request.remote_ip,
+                    secure_filename(self.uf)])
+        db.commit()
+        db.close()
+        self.write('Stream body handler: received %d bytes\n' %
+                   self.read_bytes)
+        self.write(config['BASEURL'] + self.file_id + '\n')
+        self.finish()
 
 
-# Database helpers
-# Create a SQLite file from schema.sql
-def init_db():
-	with closing(connect_db()) as db:
-		with app.open_resource('schema.sql', mode='r') as f:
-			db.cursor().executescript(f.read())
-		db.commit()
-
-# Connect to SQLite database
-def connect_db():
-	return sqlite3.connect(app.config['DATABASE'])
-
-# Helpers
-# Remove expired files from the upload directory
 def remove_expired():
-	now = get_now()
-	cur = g.db.execute('SELECT file_id, timestamp FROM files')
-	for row in cur.fetchall():
-		if (now - row[1]) > app.config['EXPIRES']:
-				remove(app.config['UPLOADDIR'] + row[0])
-				g.db.execute('DELETE FROM files WHERE file_id = ?	', [row[0]])
-				g.db.commit()
+    return
+    db = sqlite3.connect(config['DATABASE'])
+    now = get_now()
+    cur = db.execute('SELECT file_id, timestamp FROM files')
+    for row in cur.fetchall():
+        if (now - row[1]) > config['EXPIRES']:
+            os.remove(config['UPLOADDIR'] + row[0])
+            db.execute('DELETE FROM files WHERE file_id = ?	', [row[0]])
+            db.commit()
+    db.close()
 
-# Check if file exists and returns original upload name
-def checkfile(file_id):
-	cur = g.db.execute('SELECT originalname FROM files WHERE file_id = ?',
-		[file_id])
-	for row in cur.fetchall():
-		return row[0]
 
-	return False
-
-# Run application
-if __name__ == '__main__':
-	app.run()
+if __name__ == "__main__":
+    application = tornado.web.Application([
+        (r"/(.*)", StreamHandler),
+    ])
+    server = HTTPServer(application, max_buffer_size=1024 * 1024 * 1500)
+    server.listen(8888)
+    tornado.ioloop.IOLoop.instance().start()
