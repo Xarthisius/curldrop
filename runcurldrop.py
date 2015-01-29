@@ -1,18 +1,31 @@
-#!/usr/bin/env python3
-from tornado.wsgi import WSGIContainer
-from tornado.httpserver import HTTPServer
-from tornado.ioloop import IOLoop
-from os.path import isfile, isdir
-from os import makedirs
-from curldrop import app, init_db
+#!/usr/bin/env python
+import os
+import tornado
+from curldrop import StreamHandler, config
+from contextlib import closing
+import sqlite3
 
-http_server = HTTPServer(WSGIContainer(app))
-http_server.listen(app.config['PORT'])
+schema = '''drop table if exists files;
+create table files (
+  id integer primary key autoincrement,
+  file_id text not null,
+  timestamp integer not null,
+  ip text not null,
+  originalname text not null
+);'''
 
-if not isfile(app.config['DATABASE']):
-		init_db()
+if not os.path.isfile(config['DATABASE']):
+    with closing(sqlite3.connect(config['DATABASE'])) as db:
+        db.cursor().executescript(schema)
+        db.commit()
 
-if not isdir(app.config['UPLOADDIR']):
-		makedirs(app.config['UPLOADDIR'])
+if not os.path.isdir(config['UPLOADDIR']):
+    os.makedirs(config['UPLOADDIR'])
 
-IOLoop.instance().start()
+application = tornado.web.Application([
+    (r"/(.*)", StreamHandler),
+])
+server = tornado.httpserver.HTTPServer(application,
+                                       max_buffer_size=config["SERVERBUFF"])
+server.listen(config["PORT"])
+tornado.ioloop.IOLoop.instance().start()

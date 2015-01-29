@@ -7,6 +7,7 @@ import sqlite3
 import tornado.ioloop
 import tornado.web
 from tornado.httpserver import HTTPServer
+from contextlib import closing
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)-6s: %(levelname)s - %(message)s')
@@ -16,8 +17,10 @@ config = {
     'DATABASE': os.environ.get("DATABASE", 'files.db'),
     'UPLOADDIR': os.environ.get("UPLOADDIR", 'uploads/'),
     'BASEURL': os.environ.get("BASEURL", 'http://example.com/'),
-    'BUFFSIZE': os.environ.get("BUFFSIZE", 50 * 1024 ** 2),
-    'EXPIRES': os.environ.get("EXPIRES", 3600 * 24),
+    'BUFFSIZE': int(os.environ.get("BUFFSIZE", 50 * 1024 ** 2)),
+    'EXPIRES': int(os.environ.get("EXPIRES", 3600 * 24)),
+    'PORT': os.environ.get("PORT", 8888),
+    'SERVERBUFF': int(os.environ.get("SERVERBUFF", 1500 * 1024 ** 2)),
 }
 
 
@@ -31,13 +34,13 @@ def get_now():
 class StreamHandler(tornado.web.RequestHandler):
 
     def get(self, file_id):
-        db = sqlite3.connect(config['DATABASE'])
-        cur = db.execute(
-            'SELECT originalname FROM files WHERE file_id = ?', [file_id])
-        try:
-            filename = [row for row in cur.fetchall()][0][0]
-        except IndexError:
-            filename = False
+        with closing(sqlite3.connect(config['DATABASE'])) as db:
+            cur = db.execute(
+                'SELECT originalname FROM files WHERE file_id = ?', [file_id])
+            try:
+                filename = [row for row in cur.fetchall()][0][0]
+            except IndexError:
+                filename = False
         if filename:
             self.set_header('Content-Type', 'application/octet-stream')
             self.set_header(
@@ -75,12 +78,12 @@ class StreamHandler(tornado.web.RequestHandler):
             self.uploaded()
 
     def uploaded(self):
-        db = sqlite3.connect(config['DATABASE'])
-        db.execute('INSERT INTO files (file_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?)',
-                   [self.file_id, str(get_now()), self.request.remote_ip,
-                    secure_filename(self.uf)])
-        db.commit()
-        db.close()
+        with closing(sqlite3.connect(config['DATABASE'])) as db:
+            db.execute(
+                'INSERT INTO files (file_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?)',
+                [self.file_id, str(get_now()), self.request.remote_ip,
+                 secure_filename(self.uf)])
+            db.commit()
         self.write('Stream body handler: received %d bytes\n' %
                    self.read_bytes)
         self.write(config['BASEURL'] + self.file_id + '\n')
@@ -89,15 +92,14 @@ class StreamHandler(tornado.web.RequestHandler):
 
 def remove_expired():
     return
-    db = sqlite3.connect(config['DATABASE'])
     now = get_now()
-    cur = db.execute('SELECT file_id, timestamp FROM files')
-    for row in cur.fetchall():
-        if (now - row[1]) > config['EXPIRES']:
-            os.remove(config['UPLOADDIR'] + row[0])
-            db.execute('DELETE FROM files WHERE file_id = ?	', [row[0]])
-            db.commit()
-    db.close()
+    with closing(sqlite3.connect(config['DATABASE'])) as db:
+        cur = db.execute('SELECT file_id, timestamp FROM files')
+        for row in cur.fetchall():
+            if (now - row[1]) > config['EXPIRES']:
+                os.remove(config['UPLOADDIR'] + row[0])
+                db.execute('DELETE FROM files WHERE file_id = ?	', [row[0]])
+                db.commit()
 
 
 if __name__ == "__main__":
