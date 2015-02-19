@@ -51,6 +51,7 @@ class StreamHandler(tornado.web.RequestHandler):
                     if not data:
                         break
                     self.write(data)
+                    self.flush()
             self.finish()
         else:
             raise tornado.web.HTTPError(404, 'Invalid archive')
