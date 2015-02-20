@@ -17,10 +17,10 @@ config = {
     'DATABASE': os.environ.get("DATABASE", 'files.db'),
     'UPLOADDIR': os.environ.get("UPLOADDIR", 'uploads/'),
     'BASEURL': os.environ.get("BASEURL", 'http://example.com/'),
-    'BUFFSIZE': int(os.environ.get("BUFFSIZE", 50 * 1024 ** 2)),
+    'BUFFSIZE': int(os.environ.get("BUFFSIZE", 50L * 1024 ** 2)),
     'EXPIRES': int(os.environ.get("EXPIRES", 3600 * 24)),
     'PORT': os.environ.get("PORT", 8888),
-    'SERVERBUFF': int(os.environ.get("SERVERBUFF", 1500 * 1024 ** 2)),
+    'SERVERBUFF': int(os.environ.get("SERVERBUFF", 15L * 1024 ** 3)),
 }
 
 
@@ -57,7 +57,7 @@ class StreamHandler(tornado.web.RequestHandler):
             raise tornado.web.HTTPError(404, 'Invalid archive')
 
     def put(self, userfile):
-        self.read_bytes = 0
+        self.read_bytes = 0L
         self.file_id = str(uuid4())[:8]
         self.tempfile = open(config['UPLOADDIR'] + self.file_id, "wb")
         self.request.request_continue()
@@ -65,14 +65,14 @@ class StreamHandler(tornado.web.RequestHandler):
         self.uf = userfile
 
     def read_chunks(self, chunk=''):
-        self.read_bytes += len(chunk)
+        self.read_bytes += long(len(chunk))
         if chunk:
             logging.info('Received {} bytes'.format(len(chunk)))
             self.tempfile.write(chunk)
             # self.md5.update(chunk)
-        chunk_length = min(1024 * 1024 * 50,
+        chunk_length = min(1024 * 1024 * 50L,
                            self.request.content_length - self.read_bytes)
-        if chunk_length > 0:
+        if chunk_length > 0L:
             self.request.connection.stream.read_bytes(
                 chunk_length, self.read_chunks)
         else:
@@ -107,6 +107,6 @@ if __name__ == "__main__":
     application = tornado.web.Application([
         (r"/(.*)", StreamHandler),
     ])
-    server = HTTPServer(application, max_buffer_size=1024 * 1024 * 1500)
+    server = HTTPServer(application, max_buffer_size=15L * 1024 ** 3)
     server.listen(8888)
     tornado.ioloop.IOLoop.instance().start()
