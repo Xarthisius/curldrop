@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 import tornado
-from curldrop import StreamHandler, config
+from curldrop import StreamHandler, FileListHandler, config
 from contextlib import closing
 import sqlite3
 
