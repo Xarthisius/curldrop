@@ -23,6 +23,7 @@ if not os.path.isdir(config['UPLOADDIR']):
     os.makedirs(config['UPLOADDIR'])
 
 application = tornado.web.Application([
+    (r"/list_files", FileListHandler),
     (r"/(.*)", StreamHandler),
 ])
 server = tornado.httpserver.HTTPServer(application,
