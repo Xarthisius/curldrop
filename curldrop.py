@@ -1,6 +1,7 @@
 import logging
 import datetime
 import os
+import json
 from werkzeug import secure_filename
 from uuid import uuid4
 import sqlite3
@@ -91,6 +92,21 @@ class StreamHandler(tornado.web.RequestHandler):
         self.finish()
 
 
+class FileListHandler(tornado.web.RequestHandler):
+
+    def get(self):
+        result = []
+        with closing(sqlite3.connect(config['DATABASE'])) as db:
+            cur = db.execute('SELECT file_id, originalname FROM files')
+            for fid, fname in cur.fetchall():
+                if fname:
+                    result.append({"url": "%s%s" % (config["BASEURL"], fid),
+                                   "name": fname})
+        self.set_header("Content-Type", "application/json")
+        self.write(json.dumps(result))
+        self.finish()
+
+
 def remove_expired():
     return
     now = get_now()
@@ -105,6 +121,7 @@ def remove_expired():
 
 if __name__ == "__main__":
     application = tornado.web.Application([
+        (r"/list_files", FileListHandler),
         (r"/(.*)", StreamHandler),
     ])
     server = HTTPServer(application, max_buffer_size=15L * 1024 ** 3)
