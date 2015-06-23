@@ -46,7 +46,9 @@ class StreamHandler(tornado.web.RequestHandler):
             self.set_header('Content-Type', 'application/octet-stream')
             self.set_header(
                 'Content-Disposition', 'attachment; filename=' + filename)
-            with open(config['UPLOADDIR'] + file_id, 'r') as f:
+            ffname = config['UPLOADDIR'] + file_id
+            self.set_header('Content-Length', str(os.path.getsize(ffname)))
+            with open(ffname, 'r') as f:
                 while True:
                     data = f.read(config["BUFFSIZE"])
                     if not data:
