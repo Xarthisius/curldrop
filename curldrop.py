@@ -31,23 +31,31 @@ def get_now():
     return (dt - datetime.datetime(1970, 1, 1)).total_seconds()
 
 
+def get_filename(file_id):
+    with closing(sqlite3.connect(config['DATABASE'])) as db:
+        cur = db.execute(
+            'SELECT originalname FROM files WHERE file_id = ?', [file_id])
+        try:
+            filename = [row for row in cur.fetchall()][0][0]
+        except IndexError:
+            filename = False
+    return filename
+
+
 @tornado.web.stream_body
 class StreamHandler(tornado.web.RequestHandler):
 
+    def _set_custom_head(self, filename, ffname):
+        self.set_header('Content-Type', 'application/octet-stream')
+        self.set_header('Content-Disposition', 'attachment; filename=' +
+                        filename)
+        self.set_header('Content-Length', str(os.path.getsize(ffname)))
+
     def get(self, file_id):
-        with closing(sqlite3.connect(config['DATABASE'])) as db:
-            cur = db.execute(
-                'SELECT originalname FROM files WHERE file_id = ?', [file_id])
-            try:
-                filename = [row for row in cur.fetchall()][0][0]
-            except IndexError:
-                filename = False
+        filename = get_filename(file_id)
         if filename:
-            self.set_header('Content-Type', 'application/octet-stream')
-            self.set_header(
-                'Content-Disposition', 'attachment; filename=' + filename)
             ffname = config['UPLOADDIR'] + file_id
-            self.set_header('Content-Length', str(os.path.getsize(ffname)))
+            self._set_custom_head(filename, ffname)
             with open(ffname, 'r') as f:
                 while True:
                     data = f.read(config["BUFFSIZE"])
@@ -55,6 +63,15 @@ class StreamHandler(tornado.web.RequestHandler):
                         break
                     self.write(data)
                     self.flush()
+            self.finish()
+        else:
+            raise tornado.web.HTTPError(404, 'Invalid archive')
+
+    def head(self, file_id):
+        filename = get_filename(file_id)
+        if filename:
+            ffname = config['UPLOADDIR'] + file_id
+            self._set_custom_head(filename, ffname)
             self.finish()
         else:
             raise tornado.web.HTTPError(404, 'Invalid archive')
