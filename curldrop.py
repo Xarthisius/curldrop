@@ -54,7 +54,7 @@ class StreamHandler(tornado.web.RequestHandler):
     def get(self, file_id):
         filename = get_filename(file_id)
         if filename:
-            ffname = config['UPLOADDIR'] + file_id
+            ffname = os.path.join(config['UPLOADDIR'], file_id)
             self._set_custom_head(filename, ffname)
             with open(ffname, 'r') as f:
                 while True:
@@ -70,7 +70,7 @@ class StreamHandler(tornado.web.RequestHandler):
     def head(self, file_id):
         filename = get_filename(file_id)
         if filename:
-            ffname = config['UPLOADDIR'] + file_id
+            ffname = os.path.join(config['UPLOADDIR'], file_id)
             self._set_custom_head(filename, ffname)
             self.finish()
         else:
@@ -79,7 +79,8 @@ class StreamHandler(tornado.web.RequestHandler):
     def put(self, userfile):
         self.read_bytes = 0L
         self.file_id = str(uuid4())[:8]
-        self.tempfile = open(config['UPLOADDIR'] + self.file_id, "wb")
+        ffname = os.path.join(config['UPLOADDIR'], self.file_id)
+        self.tempfile = open(ffname, "wb")
         self.request.request_continue()
         self.read_chunks()
         self.uf = userfile
@@ -133,7 +134,7 @@ def remove_expired():
         cur = db.execute('SELECT file_id, timestamp FROM files')
         for row in cur.fetchall():
             if (now - row[1]) > config['EXPIRES']:
-                os.remove(config['UPLOADDIR'] + row[0])
+                os.remove(os.path.join(config['UPLOADDIR'], row[0]))
                 db.execute('DELETE FROM files WHERE file_id = ?	', [row[0]])
                 db.commit()
 
