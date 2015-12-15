@@ -1,3 +1,4 @@
+import subprocess
 import logging
 import datetime
 import os
@@ -9,13 +10,9 @@ import tornado.ioloop
 import tornado.web
 from tornado.httpserver import HTTPServer
 from contextlib import closing
-import mediagoblin
-from mediagoblin.app import MediaGoblinApp
-from mediagoblin import mg_globals
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-6s: %(levelname)s - %(message)s')
-
 
 config = {
     'DATABASE': os.environ.get("DATABASE", 'files.db'),
@@ -90,26 +87,6 @@ class StreamHandler(tornado.web.RequestHandler):
         self.read_chunks()
         self.uf = userfile
 
-    _ic = None
-
-    @property
-    def ic(self):
-        if self._ic is None:
-            mg_dir = os.getcwd()
-            config_file = mg_dir + "/mediagoblin_local.ini"
-            mg_app = MediaGoblinApp(config_file, setup_celery=True)
-
-            from mediagoblin.init.celery import setup_celery_app
-            setup_celery_app(mg_globals.app_config, mg_globals.global_config,
-                             force_celery_always_eager=True)
-
-            from mediagoblin.plugins.gmg_localfiles.import_files \
-                import ImportCommand
-            base_dir = \
-                mg_globals.global_config['storage:publicstore']['base_dir']
-            self._ic = ImportCommand(mg_app.db, base_dir)
-        return self._ic
-
     def read_chunks(self, chunk=''):
         self.read_bytes += long(len(chunk))
         if chunk:
@@ -132,7 +109,7 @@ class StreamHandler(tornado.web.RequestHandler):
                 [self.file_id, self.delete_id, str(get_now()),
                  self.request.remote_ip, secure_filename(self.uf)])
             db.commit()
-        self.ic.handle(os.path.basename(self.ffname))
+        subprocess.call("python commit.py " + os.path.basename(self.ffname), shell=True)
         self.write('Stream body handler: received %d bytes\n' %
                    self.read_bytes)
         self.write(config['BASEURL'] + self.file_id + '\n')
