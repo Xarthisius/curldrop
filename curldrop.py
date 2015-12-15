@@ -13,7 +13,7 @@ import mediagoblin
 from mediagoblin.app import MediaGoblinApp
 from mediagoblin import mg_globals
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-6s: %(levelname)s - %(message)s')
 
 
@@ -84,14 +84,14 @@ class StreamHandler(tornado.web.RequestHandler):
         self.file_id = str(uuid4())[:8]
         self.delete_id = str(uuid4())[:8]
         filename, ext = os.path.splitext(userfile)
-        self.ffname = os.path.join(config['UPLOADDIR'], self.file_id, ext)
+        self.ffname = os.path.join(config['UPLOADDIR'], self.file_id) + ext
         self.tempfile = open(self.ffname, "wb")
         self.request.request_continue()
         self.read_chunks()
         self.uf = userfile
 
     _ic = None
-    
+
     @property
     def ic(self):
         if self._ic is None:
@@ -129,10 +129,10 @@ class StreamHandler(tornado.web.RequestHandler):
         with closing(sqlite3.connect(config['DATABASE'])) as db:
             db.execute(
                 'INSERT INTO files (file_id, delete_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?, ?)',
-                [self.file_id, self.delete_id, str(get_now()), 
+                [self.file_id, self.delete_id, str(get_now()),
                  self.request.remote_ip, secure_filename(self.uf)])
             db.commit()
-        self.ic.handle(self.ffname)
+        self.ic.handle(os.path.basename(self.ffname))
         self.write('Stream body handler: received %d bytes\n' %
                    self.read_bytes)
         self.write(config['BASEURL'] + self.file_id + '\n')
