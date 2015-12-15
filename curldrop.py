@@ -9,6 +9,9 @@ import tornado.ioloop
 import tornado.web
 from tornado.httpserver import HTTPServer
 from contextlib import closing
+import mediagoblin
+from mediagoblin.app import MediaGoblinApp
+from mediagoblin import mg_globals
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)-6s: %(levelname)s - %(message)s')
@@ -79,11 +82,33 @@ class StreamHandler(tornado.web.RequestHandler):
     def put(self, userfile):
         self.read_bytes = 0L
         self.file_id = str(uuid4())[:8]
-        ffname = os.path.join(config['UPLOADDIR'], self.file_id)
-        self.tempfile = open(ffname, "wb")
+        self.delete_id = str(uuid4())[:8]
+        filename, ext = os.path.splitext(userfile)
+        self.ffname = os.path.join(config['UPLOADDIR'], self.file_id, ext)
+        self.tempfile = open(self.ffname, "wb")
         self.request.request_continue()
         self.read_chunks()
         self.uf = userfile
+
+    _ic = None
+    
+    @property
+    def ic(self):
+        if self._ic is None:
+            mg_dir = os.getcwd()
+            config_file = mg_dir + "/mediagoblin_local.ini"
+            mg_app = MediaGoblinApp(config_file, setup_celery=True)
+
+            from mediagoblin.init.celery import setup_celery_app
+            setup_celery_app(mg_globals.app_config, mg_globals.global_config,
+                             force_celery_always_eager=True)
+
+            from mediagoblin.plugins.gmg_localfiles.import_files \
+                import ImportCommand
+            base_dir = \
+                mg_globals.global_config['storage:publicstore']['base_dir']
+            self._ic = ImportCommand(mg_app.db, base_dir)
+        return self._ic
 
     def read_chunks(self, chunk=''):
         self.read_bytes += long(len(chunk))
@@ -97,18 +122,21 @@ class StreamHandler(tornado.web.RequestHandler):
             self.request.connection.stream.read_bytes(
                 chunk_length, self.read_chunks)
         else:
+            self.tempfile.close()
             self.uploaded()
 
     def uploaded(self):
         with closing(sqlite3.connect(config['DATABASE'])) as db:
             db.execute(
-                'INSERT INTO files (file_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?)',
-                [self.file_id, str(get_now()), self.request.remote_ip,
-                 secure_filename(self.uf)])
+                'INSERT INTO files (file_id, delete_id, timestamp, ip, originalname) VALUES (?, ?, ?, ?, ?)',
+                [self.file_id, self.delete_id, str(get_now()), 
+                 self.request.remote_ip, secure_filename(self.uf)])
             db.commit()
+        self.ic.handle(self.ffname)
         self.write('Stream body handler: received %d bytes\n' %
                    self.read_bytes)
         self.write(config['BASEURL'] + self.file_id + '\n')
+        self.write(config['BASEURL'] + "/delete/" + self.delete_id + '\n')
         self.finish()
 
 
