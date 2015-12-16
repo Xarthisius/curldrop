@@ -122,11 +122,12 @@ class StreamHandler(tornado.web.RequestHandler):
             db.commit()
         subprocess.call("python commit.py " + os.path.basename(self.ffname),
                         shell=True)
-        self.write('Stream body handler: received %d bytes\n' %
-                   self.read_bytes)
-        self.write(config['BASEURL'] + "upload/" + self.file_id + '\n')
-        self.write(config['BASEURL'] + "upload/delete/" + self.delete_id +
-                   '\n')
+        self.write('Open in your browser: https://images.hub.yt/u/fido/m/' +
+                   os.path.basename(self.ffname).replace('.', '-') + '/\n')
+        self.write('Download: curl -JO ' + config['BASEURL'] + "upload/" +
+                   self.file_id + '\n')
+        self.write('Delete: curl ' + config['BASEURL'] + "upload/delete/" +
+                   self.delete_id + '\n')
         self.finish()
 
 
