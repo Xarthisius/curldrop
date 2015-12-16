@@ -112,8 +112,8 @@ class StreamHandler(tornado.web.RequestHandler):
         subprocess.call("python commit.py " + os.path.basename(self.ffname), shell=True)
         self.write('Stream body handler: received %d bytes\n' %
                    self.read_bytes)
-        self.write(config['BASEURL'] + self.file_id + '\n')
-        self.write(config['BASEURL'] + "/delete/" + self.delete_id + '\n')
+        self.write(config['BASEURL'] + "upload/" + self.file_id + '\n')
+        self.write(config['BASEURL'] + "upload/delete/" + self.delete_id + '\n')
         self.finish()
 
 
