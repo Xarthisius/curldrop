@@ -148,7 +148,7 @@ class StreamHandler(tornado.web.RequestHandler):
                    os.path.basename(self.ffname).replace('.', '-') + '/\n')
         self.write('Download: curl -JO ' + config['BASEURL'] + "upload/" +
                    self.file_id + '\n')
-        self.write('Delete: curl -X DELETE' + config['BASEURL'] + "upload/" +
+        self.write('Delete: curl -X DELETE ' + config['BASEURL'] + "upload/" +
                    self.delete_id + '\n')
         self.finish()
 
