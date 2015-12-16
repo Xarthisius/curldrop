@@ -10,6 +10,7 @@ import tornado.ioloop
 import tornado.web
 from tornado.httpserver import HTTPServer
 from contextlib import closing
+from mediagoblin.media_types.image import ACCEPTED_EXTENSIONS
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-6s: %(levelname)s - %(message)s')
@@ -54,7 +55,15 @@ class StreamHandler(tornado.web.RequestHandler):
     def get(self, file_id):
         filename = get_filename(file_id)
         if filename:
-            ffname = os.path.join(config['UPLOADDIR'], file_id)
+            t_ffname = os.path.join(config['UPLOADDIR'], file_id)
+            file_not_found = True
+            for ext in ACCEPTED_EXTENSIONS:
+                ffname = t_ffname + '.' + ext
+                if os.path.isfile(ffname):
+                    file_not_found = False
+                    break
+            if file_not_found:
+                raise tornado.web.HTTPError(404, 'Invalid archive')
             self._set_custom_head(filename, ffname)
             with open(ffname, 'r') as f:
                 while True:
@@ -77,10 +86,12 @@ class StreamHandler(tornado.web.RequestHandler):
             raise tornado.web.HTTPError(404, 'Invalid archive')
 
     def put(self, userfile):
+        filename, ext = os.path.splitext(userfile)
+        if ext.strip('.') not in ACCEPTED_EXTENSIONS:
+            raise tornado.web.HTTPError(400, 'File has wrong extension')
         self.read_bytes = 0L
         self.file_id = str(uuid4())[:8]
         self.delete_id = str(uuid4())[:8]
-        filename, ext = os.path.splitext(userfile)
         self.ffname = os.path.join(config['UPLOADDIR'], self.file_id) + ext
         self.tempfile = open(self.ffname, "wb")
         self.request.request_continue()
@@ -109,11 +120,13 @@ class StreamHandler(tornado.web.RequestHandler):
                 [self.file_id, self.delete_id, str(get_now()),
                  self.request.remote_ip, secure_filename(self.uf)])
             db.commit()
-        subprocess.call("python commit.py " + os.path.basename(self.ffname), shell=True)
+        subprocess.call("python commit.py " + os.path.basename(self.ffname),
+                        shell=True)
         self.write('Stream body handler: received %d bytes\n' %
                    self.read_bytes)
         self.write(config['BASEURL'] + "upload/" + self.file_id + '\n')
-        self.write(config['BASEURL'] + "upload/delete/" + self.delete_id + '\n')
+        self.write(config['BASEURL'] + "upload/delete/" + self.delete_id +
+                   '\n')
         self.finish()
 
 
