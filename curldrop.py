@@ -52,6 +52,28 @@ class StreamHandler(tornado.web.RequestHandler):
                         filename)
         self.set_header('Content-Length', str(os.path.getsize(ffname)))
 
+    def delete(self, del_id):
+        with closing(sqlite3.connect(config['DATABASE'])) as db:
+            cur = db.execute(
+                'SELECT file_id, originalname FROM files WHERE delete_id = ?',
+                [del_id]
+            )
+            dbentry = cur.fetchone()
+        if dbentry is None:
+            raise tornado.web.HTTPError(404, 'Invalid archive')
+
+        file_id, filename = dbentry
+        ext = os.path.splitext(filename)[-1]
+        # Remove from disk
+        os.remove(os.path.join(config['UPLOADDIR'], file_id + ext))
+        # Remove from mediagoblin
+        subprocess.call("python delete.py " + file_id + ext,
+                        shell=True)
+        # Remove from db
+        with closing(sqlite3.connect(config['DATABASE'])) as db:
+            db.execute('DELETE FROM files WHERE file_id = ?', [file_id])
+            db.commit()
+
     def get(self, file_id):
         filename = get_filename(file_id)
         if filename:
@@ -126,7 +148,7 @@ class StreamHandler(tornado.web.RequestHandler):
                    os.path.basename(self.ffname).replace('.', '-') + '/\n')
         self.write('Download: curl -JO ' + config['BASEURL'] + "upload/" +
                    self.file_id + '\n')
-        self.write('Delete: curl ' + config['BASEURL'] + "upload/delete/" +
+        self.write('Delete: curl -X DELETE' + config['BASEURL'] + "upload/" +
                    self.delete_id + '\n')
         self.finish()
 
@@ -154,7 +176,7 @@ def remove_expired():
         for row in cur.fetchall():
             if (now - row[1]) > config['EXPIRES']:
                 os.remove(os.path.join(config['UPLOADDIR'], row[0]))
-                db.execute('DELETE FROM files WHERE file_id = ?	', [row[0]])
+                db.execute('DELETE FROM files WHERE file_id = ?    ', [row[0]])
                 db.commit()
 
 
